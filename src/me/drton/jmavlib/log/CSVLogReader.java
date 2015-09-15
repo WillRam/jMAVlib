@@ -14,11 +14,15 @@ public class CSVLogReader implements LogReader {
     private RandomAccessFile file;
     private String[] fields;
     private Map<String, String> fieldsFormats;
-    private String delimiter = ";";
-    private int columnTime = 0;
+    private String delimiter = ",";
+    private int columnTime = -1;
+    private int columnutcTime = -1;
     private long sizeUpdates = -1;
     private long sizeMicroseconds = -1;
     private long startMicroseconds = -1;
+    private long utcTimeReference = -1;
+    private double[][] all_data;
+    private int index = 0;
 
     public CSVLogReader(String fileName) throws IOException, FormatErrorException {
         file = new RandomAccessFile(fileName, "r");
@@ -33,8 +37,21 @@ public class CSVLogReader implements LogReader {
         }
         fields = headerLine.split(delimiter);
         fieldsFormats = new HashMap<String, String>(fields.length);
+        int count = 0;
+
         for (String field : fields) {
             fieldsFormats.put(field, "d");
+            if (field.contains("TIME_StartTime")){
+                columnTime = count;
+            }
+            if (field.contains("GPS_GPSTime")){
+
+                columnutcTime = count;
+            }
+            count ++;
+        }
+        if (columnTime < 0) {
+            throw new FormatErrorException("TIME_StartTime column not found");
         }
     }
 
@@ -45,71 +62,80 @@ public class CSVLogReader implements LogReader {
 
     @Override
     public boolean seek(long seekTime) throws FormatErrorException, IOException {
-        if (seekTime == 0) {
             file.seek(0);
+            index = 0;
             file.readLine();
+        if (seekTime == 0) {
             return true;
         }
         long t = 0;
         Map<String, Object> data = new HashMap<String, Object>();
+        long ptr = file.getFilePointer();
         while (t < seekTime) {
             data.clear();
-            long ptr = file.getFilePointer();
             try {
                 t = readUpdate(data);
             } catch (EOFException e) {
                 return false;
             }
-            if (t > seekTime) {
-                file.seek(ptr);
-                return true;
-            }
         }
-        return false;
+        file.seek(ptr);
+        return true;
     }
 
     private void updateStatistics() throws IOException, FormatErrorException {
         seek(0);
-        long packetsNum = 0;
+        int packetsNum = 0;
         long timeStart = -1;
         long timeEnd = -1;
         while (true) {
+            String line = file.readLine();
+            if (line == null)
+                break;
+            packetsNum++;
+        }
+        seek(0);
+        all_data = new double[packetsNum][fields.length];
+        for (int i=0;i<packetsNum;i++) {
             String[] values;
             try {
                 values = readLineValues();
             } catch (EOFException e) {
                 break;
             }
-
-            if (values.length > columnTime) {
-                double v = Double.parseDouble(values[columnTime].replace(',', '.'));
-                long t = (long) (v * 1000000);
-                if (timeStart < 0) {
-                    timeStart = t;
+            for (int j=0; j <values.length;j++) {
+                try {
+                    all_data[i][j] = Double.parseDouble(values[j]);
+                } catch (NumberFormatException e) {
+                    all_data[i][j] = 0.0;
                 }
-                timeEnd = t;
-                packetsNum++;
+            }
+        }
+        timeStart = (long) all_data[1][columnTime];
+        timeEnd = (long) all_data[packetsNum-2][columnTime];
+        if (columnutcTime >= 0){
+            if ( all_data[fields.length][columnutcTime] > 0) {
+                    utcTimeReference = (long)all_data[fields.length][columnutcTime] - timeEnd;
             }
         }
         startMicroseconds = timeStart;
         sizeUpdates = packetsNum;
         sizeMicroseconds = timeEnd - timeStart;
-        seek(0);
+        index = 0;
     }
 
     @Override
     public long readUpdate(Map<String, Object> update) throws IOException, FormatErrorException {
-        String[] values = readLineValues();
-        long t = 0;
-        for (int i = 0; i < values.length; i++) {
-            if (i < fields.length && !fields[i].isEmpty()) {
-                double v = Double.parseDouble(values[i].replace(',', '.'));
-                if (i == columnTime) {
-                    t = (long) (v * 1000000);
-                } else {
-                    update.put(fields[i], v);
-                }
-            }
+        long t =0;
+        for (int i = 0; i < fields.length; i++) {
+            if (i == columnTime) {
+                t = (long) all_data[index][i];
+            } 
+            update.put(fields[i], all_data[index][i]);
+        }
+        index++;
+        if (index == sizeUpdates) {
+            throw new EOFException();
         }
         return t;
     }
@@ -149,7 +175,7 @@ public class CSVLogReader implements LogReader {
 
     @Override
     public long getUTCTimeReferenceMicroseconds() {
-        return -1;  // Not supported
+        return utcTimeReference;  // Not supported
     }
 
     @Override
