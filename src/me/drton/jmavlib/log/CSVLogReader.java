@@ -45,7 +45,6 @@ public class CSVLogReader implements LogReader {
                 columnTime = count;
             }
             if (field.contains("GPS_GPSTime")){
-
                 columnutcTime = count;
             }
             count ++;
@@ -62,15 +61,14 @@ public class CSVLogReader implements LogReader {
 
     @Override
     public boolean seek(long seekTime) throws FormatErrorException, IOException {
-            file.seek(0);
-            index = 0;
-            file.readLine();
+        file.seek(0);
+        index = 0;
+        file.readLine();
         if (seekTime == 0) {
             return true;
         }
         long t = 0;
         Map<String, Object> data = new HashMap<String, Object>();
-        long ptr = file.getFilePointer();
         while (t < seekTime) {
             data.clear();
             try {
@@ -79,7 +77,6 @@ public class CSVLogReader implements LogReader {
                 return false;
             }
         }
-        file.seek(ptr);
         return true;
     }
 
@@ -111,11 +108,11 @@ public class CSVLogReader implements LogReader {
                 }
             }
         }
-        timeStart = (long) all_data[1][columnTime];
-        timeEnd = (long) all_data[packetsNum-2][columnTime];
+        timeStart = (long) all_data[0][columnTime];
+        timeEnd = (long) all_data[packetsNum-1][columnTime];
         if (columnutcTime >= 0){
-            if ( all_data[fields.length][columnutcTime] > 0) {
-                    utcTimeReference = (long)all_data[fields.length][columnutcTime] - timeEnd;
+            if ( all_data[packetsNum-1][columnutcTime] > 0) {
+                utcTimeReference = (long)all_data[packetsNum-1][columnutcTime] - timeEnd;
             }
         }
         startMicroseconds = timeStart;
@@ -126,17 +123,17 @@ public class CSVLogReader implements LogReader {
 
     @Override
     public long readUpdate(Map<String, Object> update) throws IOException, FormatErrorException {
-        long t =0;
-        for (int i = 0; i < fields.length; i++) {
-            if (i == columnTime) {
-                t = (long) all_data[index][i];
-            } 
-            update.put(fields[i], all_data[index][i]);
-        }
-        index++;
         if (index == sizeUpdates) {
             throw new EOFException();
         }
+        long t = 0;
+        for (int i = 0; i < fields.length; i++) {
+            if (i == columnTime) {
+                t = (long) all_data[index][i];
+            }
+            update.put(fields[i], all_data[index][i]);
+        }
+        index++;
         return t;
     }
 
