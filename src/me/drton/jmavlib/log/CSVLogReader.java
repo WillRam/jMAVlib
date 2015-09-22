@@ -23,6 +23,7 @@ public class CSVLogReader implements LogReader {
     private long utcTimeReference = -1;
     private double[][] all_data;
     private int index = 0;
+    private double time_mult = 1;
 
     public CSVLogReader(String fileName) throws IOException, FormatErrorException {
         file = new RandomAccessFile(fileName, "r");
@@ -50,7 +51,12 @@ public class CSVLogReader implements LogReader {
             count ++;
         }
         if (columnTime < 0) {
-            throw new FormatErrorException("TIME_StartTime column not found");
+            if (fields[0].contains("Time")){
+                time_mult = 1000000;
+                columnTime = 0;
+            } else {
+                throw new FormatErrorException("TIME_StartTime column not found");
+            }
         }
     }
 
@@ -107,6 +113,7 @@ public class CSVLogReader implements LogReader {
                     all_data[i][j] = 0.0;
                 }
             }
+            all_data[i][columnTime] *= time_mult;
         }
         timeStart = (long) all_data[0][columnTime];
         timeEnd = (long) all_data[packetsNum-1][columnTime];
